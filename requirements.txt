@@ -1,0 +1,12 @@
+pdfplumber
+numpy
+faiss-cpu
+transformers
+openai
+torch
+python-dotenv
+fastapi
+uvicorn
+pydantic
+streamlit
+google.generativeai
