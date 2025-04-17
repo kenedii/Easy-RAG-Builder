@@ -157,6 +157,28 @@ def delete_chat_history(chat_id):
     if file_path.exists():
         file_path.unlink()
 
+# Function to render chat messages in a scrollable div with icons
+def render_chat_messages(messages):
+    chat_html = ""
+    for message in messages:
+        role = message["role"]
+        content = message["content"]
+        if role == "user":
+            chat_html += (
+                f'<div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">'
+                f'<div style="max-width: 80%; text-align: left;">'
+                f'<span style="margin-right: 5px;">👤</span><strong>User:</strong> {content}'
+                f'</div></div>'
+            )
+        else:
+            chat_html += (
+                f'<div style="display: flex; justify-content: flex-start; margin-bottom: 10px;">'
+                f'<div style="max-width: 80%; text-align: left;">'
+                f'<span style="margin-right: 5px;">🤖</span><strong>Assistant:</strong> {content}'
+                f'</div></div>'
+            )
+    return f'<div style="height: 400px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px;">{chat_html}</div>'
+
 # Streamlit app
 st.title("RAG System Frontend")
 
@@ -224,33 +246,33 @@ if page == "Chat":
                 st.success("Chat deleted successfully.")
                 st.rerun()
 
-    # LLM provider selection
-    provider = st.selectbox("Select LLM Provider", ["DeepSeek", "OpenAI", "Google"])
+    # Chat settings in a single collapsible expander
+    with st.expander("Chat Settings", expanded=False):
+        # LLM provider selection
+        provider = st.selectbox("Select LLM Provider", ["DeepSeek", "OpenAI", "Google"])
 
-    # Model selection based on provider
-    model_options = MODEL_OPTIONS[provider]
-    model_display_names = [model["display"] for model in model_options]
-    selected_model_display = st.selectbox("Select Model", model_display_names)
-    selected_model = next(model["name"] for model in model_options if model["display"] == selected_model_display)
+        # Model selection based on provider
+        model_options = MODEL_OPTIONS[provider]
+        model_display_names = [model["display"] for model in model_options]
+        selected_model_display = st.selectbox("Select Model", model_display_names)
+        selected_model = next(model["name"] for model in model_options if model["display"] == selected_model_display)
 
-    # Data collection selection
-    collections = list_collections()
-    if collections:
-        selected_collection = st.selectbox("Select Data Collection", collections)
-    else:
-        st.warning("No data collections available. Please create one in the Data page.")
-        selected_collection = None
+        # Data collection selection
+        collections = list_collections()
+        if collections:
+            selected_collection = st.selectbox("Select Data Collection", collections)
+        else:
+            st.warning("No data collections available. Please create one in the Data page.")
+            selected_collection = None
 
-    # Chat settings
-    st.subheader("Chat Settings")
-    max_tokens = st.slider("Max Tokens (Output)", min_value=50, max_value=15000, value=3000, help="Controls the maximum number of tokens in the generated response.")
-    temperature = st.slider("Temperature", min_value=0.1, max_value=1.0, value=0.7, help="Controls the randomness of the response.")
-    num_passages = st.slider("Number of Context Passages", min_value=1, max_value=10, value=5, help="Controls how many retrieved passages are included as context in the prompt.")
+        # Other settings
+        max_tokens = st.slider("Max Tokens (Output)", min_value=50, max_value=15000, value=3000, help="Controls the maximum number of tokens in the generated response.")
+        temperature = st.slider("Temperature", min_value=0.1, max_value=1.0, value=0.7, help="Controls the randomness of the response.")
+        num_passages = st.slider("Number of Context Passages", min_value=1, max_value=10, value=5, help="Controls how many retrieved passages are included as context in the prompt.")
 
-    # Chat interface
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    # Chat interface with scrollable area
+    chat_placeholder = st.empty()
+    chat_placeholder.markdown(render_chat_messages(st.session_state.messages), unsafe_allow_html=True)
 
     # Chat input with RAG toggle
     col1, col2 = st.columns([1, 5])
@@ -261,8 +283,7 @@ if page == "Chat":
 
     if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        chat_placeholder.markdown(render_chat_messages(st.session_state.messages), unsafe_allow_html=True)  # Update with user's message
 
         if st.session_state.use_rag and not selected_collection:
             st.error("Please select a data collection to use RAG.")
@@ -296,8 +317,7 @@ if page == "Chat":
                     answer = f"Error: {str(e)}"
 
             st.session_state.messages.append({"role": "assistant", "content": answer})
-            with st.chat_message("assistant"):
-                st.markdown(answer)
+            chat_placeholder.markdown(render_chat_messages(st.session_state.messages), unsafe_allow_html=True)  # Update with assistant's message
 
             # Save chat history
             save_chat_history(st.session_state.chat_id, st.session_state.messages, st.session_state.chat_name)
