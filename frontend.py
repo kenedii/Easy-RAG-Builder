@@ -186,6 +186,10 @@ if page == "Chat":
 if page == "Chat":
     st.header("Chat with RAG System")
 
+    # Initialize session state for RAG toggle
+    if "use_rag" not in st.session_state:
+        st.session_state.use_rag = True
+
     # Display current chat name
     if st.session_state.chat_name:
         st.subheader(f"Chat: {st.session_state.chat_name}")
@@ -196,7 +200,7 @@ if page == "Chat":
     with st.expander("Rename Chat"):
         new_chat_name = st.text_input("Chat Name", value=st.session_state.chat_name)
         if st.button("Rename"):
-            if new_chat_name:  # Allow empty names to reset to default
+            if new_chat_name:
                 st.session_state.chat_name = new_chat_name
                 save_chat_history(st.session_state.chat_id, st.session_state.messages, st.session_state.chat_name)
                 st.success("Chat renamed successfully.")
@@ -216,6 +220,7 @@ if page == "Chat":
                 st.session_state.chat_id = str(uuid.uuid4())
                 st.session_state.messages = []
                 st.session_state.chat_name = ""
+                st.session_state.use_rag = True
                 st.success("Chat deleted successfully.")
                 st.rerun()
 
@@ -247,12 +252,21 @@ if page == "Chat":
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    if prompt := st.chat_input("Ask a question"):
+    # Chat input with RAG toggle
+    col1, col2 = st.columns([1, 5])
+    with col1:
+        st.session_state.use_rag = st.toggle("Use RAG", value=st.session_state.use_rag, help="Enable to include context from data collections; disable for standard chatbot mode.")
+    with col2:
+        prompt = st.chat_input("Ask a question")
+
+    if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        if selected_collection:
+        if st.session_state.use_rag and not selected_collection:
+            st.error("Please select a data collection to use RAG.")
+        else:
             # Determine API endpoint based on provider
             if provider == "DeepSeek":
                 endpoint = "/generate_answer/deepseek"
@@ -265,10 +279,11 @@ if page == "Chat":
             request_data = {
                 "question": prompt,
                 "model_name": selected_model,
-                "collection_name": selected_collection,
+                "collection_name": selected_collection if st.session_state.use_rag else None,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "num_passages": num_passages,
+                "use_rag": st.session_state.use_rag
             }
 
             # Send request to API
@@ -286,8 +301,6 @@ if page == "Chat":
 
             # Save chat history
             save_chat_history(st.session_state.chat_id, st.session_state.messages, st.session_state.chat_name)
-        else:
-            st.error("Please select a data collection.")
 
 # Data Page
 elif page == "Data":
