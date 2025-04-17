@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import requests
 from pathlib import Path
+import shutil
 
 # Configuration
 DATA_DIR = Path("data")
@@ -27,6 +28,17 @@ def rename_collection(old_name, new_name):
     if old_path.exists() and not new_path.exists():
         old_path.rename(new_path)
 
+def delete_collection(collection_name):
+    """Delete a collection folder and all its contents."""
+    collection_path = DATA_DIR / collection_name
+    if collection_path.exists():
+        shutil.rmtree(collection_path)
+        # Clear API cache for this collection
+        try:
+            requests.post(f"{API_URL}/clear_cache", json={"collection_name": collection_name})
+        except Exception as e:
+            st.warning(f"Failed to clear API cache: {str(e)}")
+
 def list_files(collection_name):
     """List all files in a collection."""
     collection_path = DATA_DIR / collection_name
@@ -39,6 +51,8 @@ def delete_file(collection_name, filename):
     file_path = DATA_DIR / collection_name / filename
     if file_path.exists():
         file_path.unlink()
+        # Clear API cache for this collection
+        requests.post(f"{API_URL}/clear_cache", json={"collection_name": collection_name})
 
 def upload_files(collection_name, uploaded_files):
     """Upload files to a collection."""
@@ -48,6 +62,8 @@ def upload_files(collection_name, uploaded_files):
     for uploaded_file in uploaded_files:
         with open(collection_path / uploaded_file.name, "wb") as f:
             f.write(uploaded_file.getbuffer())
+    # Clear API cache for this collection
+    requests.post(f"{API_URL}/clear_cache", json={"collection_name": collection_name})
 
 # Streamlit app
 st.title("RAG System Frontend")
@@ -60,7 +76,7 @@ if page == "Chat":
     st.header("Chat with RAG System")
 
     # LLM selection
-    llm_option = st.selectbox("Select LLM", ["DeepSeek", "OpenAI"])
+    llm_option = st.selectbox("Select LLM", ["DeepSeek", "OpenAI", "Gemini"])
 
     # Data collection selection
     collections = list_collections()
@@ -71,8 +87,10 @@ if page == "Chat":
         selected_collection = None
 
     # Chat settings
-    max_tokens = st.slider("Max Tokens", min_value=50, max_value=500, value=100)
-    temperature = st.slider("Temperature", min_value=0.1, max_value=1.0, value=0.7)
+    st.subheader("Chat Settings")
+    max_tokens = st.slider("Max Tokens (Output)", min_value=50, max_value=500, value=100, help="Controls the maximum number of tokens in the generated response.")
+    temperature = st.slider("Temperature", min_value=0.1, max_value=1.0, value=0.7, help="Controls the randomness of the response.")
+    num_passages = st.slider("Number of Context Passages", min_value=1, max_value=10, value=5, help="Controls how many retrieved passages are included as context in the prompt.")
 
     # Chat interface
     if "messages" not in st.session_state:
@@ -91,10 +109,13 @@ if page == "Chat":
             # Determine API endpoint and model based on LLM selection
             if llm_option == "DeepSeek":
                 endpoint = "/generate_answer/deepseek"
-                model_name = "deepseek-chat"  # Default DeepSeek model
-            else:
+                model_name = "deepseek-chat"
+            elif llm_option == "OpenAI":
                 endpoint = "/generate_answer/openai"
-                model_name = "gpt-3.5-turbo"  # Default OpenAI model
+                model_name = "gpt-3.5-turbo"
+            elif llm_option == "Gemini":
+                endpoint = "/generate_answer/gemini"
+                model_name = "gemini-pro"
 
             # Prepare request data
             request_data = {
@@ -103,6 +124,7 @@ if page == "Chat":
                 "collection_name": selected_collection,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
+                "num_passages": num_passages,
             }
 
             # Send request to API
@@ -145,6 +167,14 @@ elif page == "Data":
                 st.error("Please enter a collection name.")
 
     if selected_collection:
+        # Delete collection
+        with st.expander("Delete Collection"):
+            st.warning("This will permanently delete the collection and all its files.")
+            if st.button(f"Delete '{selected_collection}'"):
+                delete_collection(selected_collection)
+                st.success(f"Collection '{selected_collection}' deleted.")
+                st.rerun()  # Refresh the page to update the collection list
+
         # View and delete files
         st.subheader(f"Files in '{selected_collection}'")
         files = list_files(selected_collection)
@@ -154,8 +184,6 @@ elif page == "Data":
                 col1.write(file)
                 if col2.button("Delete", key=f"delete_{file}"):
                     delete_file(selected_collection, file)
-                    # Clear API cache for this collection
-                    requests.post(f"{API_URL}/clear_cache", json={"collection_name": selected_collection})
                     st.success(f"File '{file}' deleted.")
                     st.rerun()
         else:
@@ -167,8 +195,6 @@ elif page == "Data":
             if st.button("Upload"):
                 if uploaded_files:
                     upload_files(selected_collection, uploaded_files)
-                    # Clear API cache for this collection
-                    requests.post(f"{API_URL}/clear_cache", json={"collection_name": selected_collection})
                     st.success("Files uploaded successfully.")
                     st.rerun()
                 else:
