@@ -1,8 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import rag_utils
-import local
-import llm_utils
+import llm_utils  # Updated import to match your llm_utils.py
 from typing import Dict
 from fastapi.middleware.cors import CORSMiddleware
 import warnings
@@ -12,7 +11,7 @@ warnings.simplefilter("ignore", category=UserWarning)
 
 # Global variables for shared encoders and retrieval cache
 question_encoder = rag_utils.DPRQuestionEncoder.from_pretrained('facebook/dpr-question_encoder-single-nq-base')
-question_tokenizer = rag_utils.DPRQuestionEncoderTokenizer.from_pretrained('facebook/dpr-question_encoder-single-nq-base')
+question_tokenizer = rag_utils.DPRQuestionEncoderTokenizer.from_pretrained('facebook/dpr-ctx_encoder-single-nq-base')
 context_encoder = rag_utils.DPRContextEncoder.from_pretrained('facebook/dpr-ctx_encoder-single-nq-base')
 context_tokenizer = rag_utils.DPRContextEncoderTokenizer.from_pretrained('facebook/dpr-ctx_encoder-single-nq-base')
 retrieval_cache: Dict[str, tuple] = {}  # collection_name -> (index, passages)
@@ -47,10 +46,11 @@ def get_retrieval_system(collection_name: str):
 # Request model with additional settings
 class GenerateAnswerRequest(BaseModel):
     question: str
-    model_name: str  # e.g., 'deepseek-chat' for DeepSeek, 'gpt-3.5-turbo' for OpenAI
+    model_name: str  # e.g., 'deepseek-chat' for DeepSeek, 'gpt-3.5-turbo' for OpenAI, 'gemini-pro' for Gemini
     collection_name: str
     max_tokens: int = 100
     temperature: float = 0.7
+    num_passages: int = 5  # New field to control number of retrieved passages
 
 # Endpoint for generating answers using a local model
 @app.post("/generate_answer/local")
@@ -60,10 +60,11 @@ def generate_answer_local(request: GenerateAnswerRequest):
     collection_name = request.collection_name
     max_tokens = request.max_tokens
     temperature = request.temperature
+    num_passages = request.num_passages
 
     index, passages = get_retrieval_system(collection_name)
     top_passages = rag_utils.retrieve_passages(
-        question, index, passages, question_encoder, question_tokenizer, k=5
+        question, index, passages, question_encoder, question_tokenizer, k=num_passages
     )
 
     if model_name not in local_models:
@@ -86,10 +87,11 @@ def generate_answer_deepseek(request: GenerateAnswerRequest):
     collection_name = request.collection_name
     max_tokens = request.max_tokens
     temperature = request.temperature
+    num_passages = request.num_passages
 
     index, passages = get_retrieval_system(collection_name)
     top_passages = rag_utils.retrieve_passages(
-        question, index, passages, question_encoder, question_tokenizer, k=5
+        question, index, passages, question_encoder, question_tokenizer, k=num_passages
     )
 
     answer = llm_utils.generate_answer(
@@ -105,14 +107,35 @@ def generate_answer_openai(request: GenerateAnswerRequest):
     collection_name = request.collection_name
     max_tokens = request.max_tokens
     temperature = request.temperature
+    num_passages = request.num_passages
 
     index, passages = get_retrieval_system(collection_name)
     top_passages = rag_utils.retrieve_passages(
-        question, index, passages, question_encoder, question_tokenizer, k=5
+        question, index, passages, question_encoder, question_tokenizer, k=num_passages
     )
 
     answer = llm_utils.generate_answer(
         question, top_passages, model_name, api_type='openai', max_tokens=max_tokens, temperature=temperature
+    )
+    return {"answer": answer}
+
+# Endpoint for generating answers using Google Gemini
+@app.post("/generate_answer/gemini")
+def generate_answer_gemini(request: GenerateAnswerRequest):
+    question = request.question
+    model_name = request.model_name
+    collection_name = request.collection_name
+    max_tokens = request.max_tokens
+    temperature = request.temperature
+    num_passages = request.num_passages
+
+    index, passages = get_retrieval_system(collection_name)
+    top_passages = rag_utils.retrieve_passages(
+        question, index, passages, question_encoder, question_tokenizer, k=num_passages
+    )
+
+    answer = llm_utils.generate_answer(
+        question, top_passages, model_name, api_type='gemini', max_tokens=max_tokens, temperature=temperature
     )
     return {"answer": answer}
 
