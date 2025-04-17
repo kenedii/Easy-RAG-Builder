@@ -196,10 +196,15 @@ if page == "Chat":
     with st.expander("Rename Chat"):
         new_chat_name = st.text_input("Chat Name", value=st.session_state.chat_name)
         if st.button("Rename"):
-            if new_chat_name:
+            if new_chat_name:  # Allow empty names to reset to default
                 st.session_state.chat_name = new_chat_name
-                rename_chat_history(st.session_state.chat_id, new_chat_name)
+                save_chat_history(st.session_state.chat_id, st.session_state.messages, st.session_state.chat_name)
                 st.success("Chat renamed successfully.")
+                st.rerun()
+            else:
+                st.session_state.chat_name = ""
+                save_chat_history(st.session_state.chat_id, st.session_state.messages, "")
+                st.success("Chat name reset.")
                 st.rerun()
 
     # Delete Chat
