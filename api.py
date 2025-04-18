@@ -2,10 +2,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import rag_utils
 import llm_utils
-from typing import Dict, List
+from typing import Dict, List, Optional
 from fastapi.middleware.cors import CORSMiddleware
 import warnings
 import os
+import local
 
 warnings.simplefilter("ignore", category=UserWarning)
 
@@ -50,51 +51,41 @@ class Message(BaseModel):
     sources: List[Dict] = []  # Optional for assistant messages
 
 class GenerateAnswerRequest(BaseModel):
-    messages: List[Message]  # List of messages instead of single question
+    messages: List[Message]
     model_name: str
-    collection_name: str | None
+    collection_name: Optional[str] = None
     max_tokens: int = 100
     temperature: float = 0.7
     num_passages: int = 5
     use_rag: bool = True
-    system_prompt: str  # Add system prompt field
+    system_prompt: str = ""
+    model_type: Optional[str] = None  # Added for local models
 
 class ClearCacheRequest(BaseModel):
     collection_name: str
 
-# Endpoint for generating answers using a local model
 @app.post("/generate_answer/local")
 def generate_answer_local(request: GenerateAnswerRequest):
-    messages = request.messages
-    question = messages[-1].content if messages else ""
+    if request.model_type is None:
+        raise HTTPException(status_code=400, detail="model_type is required for local models")
+    
     model_name = request.model_name
-    collection_name = request.collection_name
-    max_tokens = request.max_tokens
-    temperature = request.temperature
-    num_passages = request.num_passages
-    use_rag = request.use_rag
-    system_prompt = request.system_prompt
-
-    top_passages = []
-    sources = []
-    if use_rag:
-        if not collection_name:
-            raise HTTPException(status_code=400, detail="Collection name required when using RAG")
-        index, passages = get_retrieval_system(collection_name)
-        top_passages, sources = rag_utils.retrieve_passages(
-            question, index, passages, question_encoder, question_tokenizer, k=num_passages
-        )
-
+    question = request.messages[-1].content if request.messages else ""
+    # Placeholder for top_passages; adjust based on your RAG logic
+    top_passages = ["Sample context"]  # Replace with actual retrieval logic
+    
     if model_name not in local_models:
         try:
-            generator_model, generator_tokenizer = rag_utils.load_model(model_name)
+            generator_model, generator_tokenizer = local.load_model(model_name, model_type=request.model_type)
             local_models[model_name] = (generator_model, generator_tokenizer)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to load local model: {str(e)}")
-
+    
     generator_model, generator_tokenizer = local_models[model_name]
-    answer = rag_utils.generate_answer(messages, top_passages, generator_model, generator_tokenizer)
-    return {"answer": answer, "sources": sources}
+    answer = local.generate_answer(
+        question, top_passages, generator_model, generator_tokenizer, model_type=request.model_type
+    )
+    return {"answer": answer, "sources": top_passages}  # Adjust sources as needed
 
 # Endpoint for generating answers using DeepSeek
 @app.post("/generate_answer/deepseek")
