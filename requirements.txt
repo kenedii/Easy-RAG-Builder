@@ -10,3 +10,4 @@ uvicorn
 pydantic
 streamlit
 google.generativeai
+PyPDF2
