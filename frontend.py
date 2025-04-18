@@ -13,6 +13,12 @@ DATA_DIR = Path("data")
 CHAT_HISTORY_DIR = Path("chat_history")
 API_URL = "http://localhost:8000"  # Adjust if your FastAPI server runs on a different port
 
+# Default system prompt
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a helpful assistant. Use the provided context to answer questions accurately. "
+    "Include a 'References' section if sources are used."
+)
+
 # Ensure chat_history directory exists
 CHAT_HISTORY_DIR.mkdir(exist_ok=True)
 
@@ -120,26 +126,27 @@ def get_chat_preview(messages):
             return ' '.join(words[:5]) + ("..." if len(words) > 5 else "")
     return "No messages"
 
-def save_chat_history(chat_id, messages, name=""):
-    """Save chat history to a JSON file."""
+def save_chat_history(chat_id, messages, name="", system_prompt=DEFAULT_SYSTEM_PROMPT):
+    """Save chat history to a JSON file, including system prompt."""
     chat_data = {
         "id": chat_id,
         "name": name,
         "timestamp": datetime.utcnow().isoformat(),
-        "messages": messages
+        "messages": messages,
+        "system_prompt": system_prompt
     }
     file_path = CHAT_HISTORY_DIR / f"{chat_id}.json"
     with open(file_path, 'w') as f:
         json.dump(chat_data, f, indent=2)
 
 def load_chat_history(chat_id):
-    """Load chat history from a JSON file."""
+    """Load chat history from a JSON file, including system prompt."""
     file_path = CHAT_HISTORY_DIR / f"{chat_id}.json"
     if file_path.exists():
         with open(file_path, 'r') as f:
             data = json.load(f)
-        return data.get("messages", []), data.get("name", "")
-    return [], ""
+        return data.get("messages", []), data.get("name", ""), data.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
+    return [], "", DEFAULT_SYSTEM_PROMPT
 
 def rename_chat_history(chat_id, new_name):
     """Rename a chat history by updating its JSON file."""
@@ -193,6 +200,14 @@ st.title("RAG System Frontend")
 # Sidebar navigation
 page = st.sidebar.selectbox("Select Page", ["Chat", "Data"])
 
+# Initialize upload key counter for file uploader
+if "upload_key_counter" not in st.session_state:
+    st.session_state.upload_key_counter = 0
+
+# Initialize system prompt
+if "system_prompt" not in st.session_state:
+    st.session_state.system_prompt = DEFAULT_SYSTEM_PROMPT
+
 # Chat selection in sidebar for "Chat" page
 if page == "Chat":
     st.sidebar.subheader("Chat Histories")
@@ -205,12 +220,13 @@ if page == "Chat":
         st.session_state.chat_id = str(uuid.uuid4())
         st.session_state.messages = []
         st.session_state.chat_name = ""
+        st.session_state.system_prompt = DEFAULT_SYSTEM_PROMPT
     else:
         # Load selected chat
         selected_chat_id = chat_histories[chat_options.index(selected_chat) - 1]["id"]
         if selected_chat_id != st.session_state.chat_id:
             st.session_state.chat_id = selected_chat_id
-            st.session_state.messages, st.session_state.chat_name = load_chat_history(selected_chat_id)
+            st.session_state.messages, st.session_state.chat_name, st.session_state.system_prompt = load_chat_history(selected_chat_id)
 
 # Main area for "Chat" page
 if page == "Chat":
@@ -277,6 +293,19 @@ if page == "Chat":
             help="Enable to include previous messages in the chat as context; disable to send only the current question."
         )
 
+    # System prompt expander
+    with st.expander("System Prompt", expanded=False):
+        st.session_state.system_prompt = st.text_area(
+            "Edit System Prompt",
+            value=st.session_state.system_prompt,
+            height=100,
+            help="Customize the system prompt to define the assistant's behavior."
+        )
+        if st.button("Reset to Default Prompt"):
+            st.session_state.system_prompt = DEFAULT_SYSTEM_PROMPT
+            st.success("System prompt reset to default.")
+            st.rerun()
+
     # Chat management expander
     with st.expander("Chat Management", expanded=False):
         # Rename Chat section
@@ -285,12 +314,12 @@ if page == "Chat":
         if st.button("Rename"):
             if new_chat_name:
                 st.session_state.chat_name = new_chat_name
-                save_chat_history(st.session_state.chat_id, st.session_state.messages, st.session_state.chat_name)
+                save_chat_history(st.session_state.chat_id, st.session_state.messages, st.session_state.chat_name, st.session_state.system_prompt)
                 st.success("Chat renamed successfully.")
                 st.rerun()
             else:
                 st.session_state.chat_name = ""
-                save_chat_history(st.session_state.chat_id, st.session_state.messages, "")
+                save_chat_history(st.session_state.chat_id, st.session_state.messages, "", st.session_state.system_prompt)
                 st.success("Chat name reset.")
                 st.rerun()
 
@@ -303,6 +332,7 @@ if page == "Chat":
                 st.session_state.chat_id = str(uuid.uuid4())
                 st.session_state.messages = []
                 st.session_state.chat_name = ""
+                st.session_state.system_prompt = DEFAULT_SYSTEM_PROMPT
                 st.session_state.use_rag = True
                 st.session_state.use_data_collection = True
                 st.session_state.include_chat_history = True
@@ -354,7 +384,8 @@ if page == "Chat":
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "num_passages": num_passages,
-                "use_rag": st.session_state.use_rag
+                "use_rag": st.session_state.use_rag,
+                "system_prompt": st.session_state.system_prompt
             }
 
             # Send request to API
@@ -374,7 +405,7 @@ if page == "Chat":
             chat_placeholder.markdown(render_chat_messages(st.session_state.messages), unsafe_allow_html=True)  # Update with assistant's message
 
             # Save chat history
-            save_chat_history(st.session_state.chat_id, st.session_state.messages, st.session_state.chat_name)
+            save_chat_history(st.session_state.chat_id, st.session_state.messages, st.session_state.chat_name, st.session_state.system_prompt)
 
 # Data Page
 elif page == "Data":
@@ -425,10 +456,16 @@ elif page == "Data":
 
         # Upload files (drag and drop)
         with st.expander("Upload Files"):
-            uploaded_files = st.file_uploader("Choose files", accept_multiple_files=True, type=["pdf"])
+            uploaded_files = st.file_uploader(
+                "Choose files",
+                accept_multiple_files=True,
+                type=["pdf"],
+                key=f"file_uploader_{st.session_state.upload_key_counter}"
+            )
             if st.button("Upload"):
                 if uploaded_files:
                     upload_files(selected_collection, uploaded_files)
+                    st.session_state.upload_key_counter += 1  # Increment to reset file uploader
                     st.success("Files uploaded successfully.")
                     st.rerun()
                 else:
