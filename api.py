@@ -57,6 +57,7 @@ class GenerateAnswerRequest(BaseModel):
     temperature: float = 0.7
     num_passages: int = 5
     use_rag: bool = True
+    system_prompt: str  # Add system prompt field
 
 class ClearCacheRequest(BaseModel):
     collection_name: str
@@ -72,6 +73,7 @@ def generate_answer_local(request: GenerateAnswerRequest):
     temperature = request.temperature
     num_passages = request.num_passages
     use_rag = request.use_rag
+    system_prompt = request.system_prompt
 
     top_passages = []
     sources = []
@@ -105,6 +107,7 @@ def generate_answer_deepseek(request: GenerateAnswerRequest):
     temperature = request.temperature
     num_passages = request.num_passages
     use_rag = request.use_rag
+    system_prompt = request.system_prompt
 
     top_passages = []
     sources = []
@@ -117,7 +120,7 @@ def generate_answer_deepseek(request: GenerateAnswerRequest):
         )
 
     answer = llm_utils.generate_answer(
-        messages, top_passages, model_name, api_type='deepseek', max_tokens=max_tokens, temperature=temperature
+        messages, top_passages, model_name, api_type='deepseek', max_tokens=max_tokens, temperature=temperature, system_prompt=system_prompt
     )
     return {"answer": answer, "sources": sources}
 
@@ -132,6 +135,7 @@ def generate_answer_openai(request: GenerateAnswerRequest):
     temperature = request.temperature
     num_passages = request.num_passages
     use_rag = request.use_rag
+    system_prompt = request.system_prompt
 
     top_passages = []
     sources = []
@@ -144,7 +148,7 @@ def generate_answer_openai(request: GenerateAnswerRequest):
         )
 
     answer = llm_utils.generate_answer(
-        messages, top_passages, model_name, api_type='openai', max_tokens=max_tokens, temperature=temperature
+        messages, top_passages, model_name, api_type='openai', max_tokens=max_tokens, temperature=temperature, system_prompt=system_prompt
     )
     return {"answer": answer, "sources": sources}
 
@@ -159,6 +163,7 @@ def generate_answer_gemini(request: GenerateAnswerRequest):
     temperature = request.temperature
     num_passages = request.num_passages
     use_rag = request.use_rag
+    system_prompt = request.system_prompt
 
     top_passages = []
     sources = []
@@ -171,7 +176,7 @@ def generate_answer_gemini(request: GenerateAnswerRequest):
         )
 
     answer = llm_utils.generate_answer(
-        messages, top_passages, model_name, api_type='gemini', max_tokens=max_tokens, temperature=temperature
+        messages, top_passages, model_name, api_type='gemini', max_tokens=max_tokens, temperature=temperature, system_prompt=system_prompt
     )
     return {"answer": answer, "sources": sources}
 

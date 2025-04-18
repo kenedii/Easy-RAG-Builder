@@ -43,9 +43,9 @@ def _send_deepseek_message(messages, max_tokens=100, temperature=0.7):
         print(f"[ERROR] DeepSeek API error: {err}")
         return None
 
-def generate_answer(messages, top_passages, model_name, api_type='openai', max_tokens=100, temperature=0.7):
+def generate_answer(messages, top_passages, model_name, api_type='openai', max_tokens=100, temperature=0.7, system_prompt=""):
     """
-    Generates an answer using the specified API with the given message history and passages.
+    Generates an answer using the specified API with the given message history, passages, and system prompt.
 
     Args:
         messages (list): List of Message objects with role and content.
@@ -54,18 +54,21 @@ def generate_answer(messages, top_passages, model_name, api_type='openai', max_t
         api_type (str): 'openai', 'deepseek', or 'gemini'.
         max_tokens (int): Maximum number of tokens to generate.
         temperature (float): Sampling temperature.
+        system_prompt (str): Custom system prompt to define assistant behavior.
 
     Returns:
         str: Generated answer with citations.
     """
-    # Construct prompt with or without passages
+    # Construct prompt with system prompt and context
+    prompt = f"{system_prompt}\n\n" if system_prompt else ""
+
     if top_passages:
         context = "\n".join([
             f"[{i+1}] {passage['text']} (Source: {passage['file_name']}, Page {passage['page_number']})"
             for i, passage in enumerate(top_passages)
         ])
-        prompt = (
-            f"You are a helpful assistant. Use the following context to answer the question, citing sources with [number] in your response. "
+        prompt += (
+            f"Use the following context to answer the question, citing sources with [number] in your response. "
             f"Include a 'References' section at the end listing the sources used.\n\n"
             f"Context:\n{context}\n\n"
             f"Conversation History:\n"
@@ -77,8 +80,8 @@ def generate_answer(messages, top_passages, model_name, api_type='openai', max_t
             f"If you lack information, state so. End with a 'References' section listing the cited sources."
         )
     else:
-        prompt = (
-            f"You are a helpful assistant. Answer based on your knowledge, using the conversation history below.\n\n"
+        prompt += (
+            f"Answer based on your knowledge, using the conversation history below.\n\n"
             f"Conversation History:\n"
         )
         for msg in messages:
