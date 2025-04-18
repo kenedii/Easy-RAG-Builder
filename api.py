@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import rag_utils
 import llm_utils
-from typing import Dict
+from typing import Dict, List
 from fastapi.middleware.cors import CORSMiddleware
 import warnings
 import os
@@ -44,19 +44,28 @@ def get_retrieval_system(collection_name: str):
     return retrieval_cache[collection_name]
 
 # Request model with additional settings
+class Message(BaseModel):
+    role: str
+    content: str
+    sources: List[Dict] = []  # Optional for assistant messages
+
 class GenerateAnswerRequest(BaseModel):
-    question: str
-    model_name: str  # e.g., 'deepseek-chat', 'gpt-3.5-turbo-0125', 'gemini-2.0-flash'
-    collection_name: str | None  # None if RAG is disabled
+    messages: List[Message]  # List of messages instead of single question
+    model_name: str
+    collection_name: str | None
     max_tokens: int = 100
     temperature: float = 0.7
     num_passages: int = 5
-    use_rag: bool = True  # New field to control RAG usage
+    use_rag: bool = True
+
+class ClearCacheRequest(BaseModel):
+    collection_name: str
 
 # Endpoint for generating answers using a local model
 @app.post("/generate_answer/local")
 def generate_answer_local(request: GenerateAnswerRequest):
-    question = request.question
+    messages = request.messages
+    question = messages[-1].content if messages else ""
     model_name = request.model_name
     collection_name = request.collection_name
     max_tokens = request.max_tokens
@@ -65,29 +74,31 @@ def generate_answer_local(request: GenerateAnswerRequest):
     use_rag = request.use_rag
 
     top_passages = []
+    sources = []
     if use_rag:
         if not collection_name:
             raise HTTPException(status_code=400, detail="Collection name required when using RAG")
         index, passages = get_retrieval_system(collection_name)
-        top_passages = rag_utils.retrieve_passages(
+        top_passages, sources = rag_utils.retrieve_passages(
             question, index, passages, question_encoder, question_tokenizer, k=num_passages
         )
 
     if model_name not in local_models:
         try:
-            generator_model, generator_tokenizer = local.load_model(model_name)
+            generator_model, generator_tokenizer = rag_utils.load_model(model_name)
             local_models[model_name] = (generator_model, generator_tokenizer)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to load local model: {str(e)}")
 
     generator_model, generator_tokenizer = local_models[model_name]
-    answer = local.generate_answer(question, top_passages, generator_model, generator_tokenizer)
-    return {"answer": answer}
+    answer = rag_utils.generate_answer(messages, top_passages, generator_model, generator_tokenizer)
+    return {"answer": answer, "sources": sources}
 
 # Endpoint for generating answers using DeepSeek
 @app.post("/generate_answer/deepseek")
 def generate_answer_deepseek(request: GenerateAnswerRequest):
-    question = request.question
+    messages = request.messages
+    question = messages[-1].content if messages else ""
     model_name = request.model_name
     collection_name = request.collection_name
     max_tokens = request.max_tokens
@@ -96,23 +107,25 @@ def generate_answer_deepseek(request: GenerateAnswerRequest):
     use_rag = request.use_rag
 
     top_passages = []
+    sources = []
     if use_rag:
         if not collection_name:
             raise HTTPException(status_code=400, detail="Collection name required when using RAG")
         index, passages = get_retrieval_system(collection_name)
-        top_passages = rag_utils.retrieve_passages(
+        top_passages, sources = rag_utils.retrieve_passages(
             question, index, passages, question_encoder, question_tokenizer, k=num_passages
         )
 
     answer = llm_utils.generate_answer(
-        question, top_passages, model_name, api_type='deepseek', max_tokens=max_tokens, temperature=temperature
+        messages, top_passages, model_name, api_type='deepseek', max_tokens=max_tokens, temperature=temperature
     )
-    return {"answer": answer}
+    return {"answer": answer, "sources": sources}
 
 # Endpoint for generating answers using OpenAI
 @app.post("/generate_answer/openai")
 def generate_answer_openai(request: GenerateAnswerRequest):
-    question = request.question
+    messages = request.messages
+    question = messages[-1].content if messages else ""
     model_name = request.model_name
     collection_name = request.collection_name
     max_tokens = request.max_tokens
@@ -121,23 +134,25 @@ def generate_answer_openai(request: GenerateAnswerRequest):
     use_rag = request.use_rag
 
     top_passages = []
+    sources = []
     if use_rag:
         if not collection_name:
             raise HTTPException(status_code=400, detail="Collection name required when using RAG")
         index, passages = get_retrieval_system(collection_name)
-        top_passages = rag_utils.retrieve_passages(
+        top_passages, sources = rag_utils.retrieve_passages(
             question, index, passages, question_encoder, question_tokenizer, k=num_passages
         )
 
     answer = llm_utils.generate_answer(
-        question, top_passages, model_name, api_type='openai', max_tokens=max_tokens, temperature=temperature
+        messages, top_passages, model_name, api_type='openai', max_tokens=max_tokens, temperature=temperature
     )
-    return {"answer": answer}
+    return {"answer": answer, "sources": sources}
 
 # Endpoint for generating answers using Google Gemini
 @app.post("/generate_answer/gemini")
 def generate_answer_gemini(request: GenerateAnswerRequest):
-    question = request.question
+    messages = request.messages
+    question = messages[-1].content if messages else ""
     model_name = request.model_name
     collection_name = request.collection_name
     max_tokens = request.max_tokens
@@ -146,22 +161,24 @@ def generate_answer_gemini(request: GenerateAnswerRequest):
     use_rag = request.use_rag
 
     top_passages = []
+    sources = []
     if use_rag:
         if not collection_name:
             raise HTTPException(status_code=400, detail="Collection name required when using RAG")
         index, passages = get_retrieval_system(collection_name)
-        top_passages = rag_utils.retrieve_passages(
+        top_passages, sources = rag_utils.retrieve_passages(
             question, index, passages, question_encoder, question_tokenizer, k=num_passages
         )
 
     answer = llm_utils.generate_answer(
-        question, top_passages, model_name, api_type='gemini', max_tokens=max_tokens, temperature=temperature
+        messages, top_passages, model_name, api_type='gemini', max_tokens=max_tokens, temperature=temperature
     )
-    return {"answer": answer}
+    return {"answer": answer, "sources": sources}
 
 # Endpoint to clear cache for a collection
 @app.post("/clear_cache")
-def clear_cache(collection_name: str):
+def clear_cache(request: ClearCacheRequest):
+    collection_name = request.collection_name
     if collection_name in retrieval_cache:
         del retrieval_cache[collection_name]
     return {"message": "Cache cleared"}

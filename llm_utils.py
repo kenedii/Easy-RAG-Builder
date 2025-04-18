@@ -43,47 +43,60 @@ def _send_deepseek_message(messages, max_tokens=100, temperature=0.7):
         print(f"[ERROR] DeepSeek API error: {err}")
         return None
 
-def generate_answer(question, top_passages, model_name, api_type='openai', max_tokens=100, temperature=0.7):
+def generate_answer(messages, top_passages, model_name, api_type='openai', max_tokens=100, temperature=0.7):
     """
-    Generates an answer using the specified API (OpenAI, DeepSeek, or Gemini) with the given model.
-    
+    Generates an answer using the specified API with the given message history and passages.
+
     Args:
-        question (str): The input question.
-        top_passages (list): List of retrieved passages (empty if RAG is disabled).
-        model_name (str): The model to use (e.g., 'gpt-3.5-turbo' for OpenAI, 'deepseek-chat' for DeepSeek, 'gemini-pro' for Gemini).
-        api_type (str): 'openai', 'deepseek', or 'gemini' to specify the API provider.
-        max_tokens (int): Maximum number of tokens to generate (default: 100).
-        temperature (float): Sampling temperature (default: 0.7).
-    
+        messages (list): List of Message objects with role and content.
+        top_passages (list): List of dicts with 'text', 'file_name', and 'page_number'.
+        model_name (str): The model to use.
+        api_type (str): 'openai', 'deepseek', or 'gemini'.
+        max_tokens (int): Maximum number of tokens to generate.
+        temperature (float): Sampling temperature.
+
     Returns:
-        str: Generated answer.
+        str: Generated answer with citations.
     """
-    # Construct prompt based on whether passages are provided
+    # Construct prompt with or without passages
     if top_passages:
+        context = "\n".join([
+            f"[{i+1}] {passage['text']} (Source: {passage['file_name']}, Page {passage['page_number']})"
+            for i, passage in enumerate(top_passages)
+        ])
         prompt = (
-            f"Question: {question}\n"
-            f"Context: Below are relevant excerpts from the documentation of the ECGeniuses machine:\n"
-            f"{' '.join([f'- {passage}' for passage in top_passages])}\n"
-            f"Answer: Provide a detailed, step-by-step response using insights on the context. If you do not have enough information to give an accurate response, let the user know."
+            f"You are a helpful assistant. Use the following context to answer the question, citing sources with [number] in your response. "
+            f"Include a 'References' section at the end listing the sources used.\n\n"
+            f"Context:\n{context}\n\n"
+            f"Conversation History:\n"
+        )
+        for msg in messages:
+            prompt += f"{msg.role.capitalize()}: {msg.content}\n"
+        prompt += (
+            f"\nAnswer: Provide a detailed response, citing relevant sources with [number]. "
+            f"If you lack information, state so. End with a 'References' section listing the cited sources."
         )
     else:
         prompt = (
-            f"Question: {question}\n"
-            f"Answer: Provide a detailed response to the question. If you do not have enough information to give an accurate response, let the user know."
+            f"You are a helpful assistant. Answer based on your knowledge, using the conversation history below.\n\n"
+            f"Conversation History:\n"
         )
-    
-    messages = [{"role": "user", "content": prompt}]
+        for msg in messages:
+            prompt += f"{msg.role.capitalize()}: {msg.content}\n"
+        prompt += f"\nAnswer: Provide a detailed response. If you lack information, state so."
+
+    api_messages = [{"role": "user", "content": prompt}]
 
     if api_type == 'openai':
         response = openai_client_instance.chat.completions.create(
             model=model_name,
-            messages=messages,
+            messages=api_messages,
             max_tokens=max_tokens,
             temperature=temperature,
         )
         answer = response.choices[0].message.content.strip()
     elif api_type == 'deepseek':
-        response = _send_deepseek_message(messages, max_tokens=max_tokens, temperature=temperature)
+        response = _send_deepseek_message(api_messages, max_tokens=max_tokens, temperature=temperature)
         if response is None:
             return "Error: Could not generate an answer using DeepSeek API."
         answer = response["choices"][0]["message"]["content"].strip()
