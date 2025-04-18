@@ -198,7 +198,7 @@ def render_chat_messages(messages):
 st.title("RAG System Frontend")
 
 # Sidebar navigation
-page = st.sidebar.selectbox("Select Page", ["Chat", "Data"])
+page = st.sidebar.selectbox("Select Page", ["Chat", "Data"], key="page_select")
 
 # Initialize upload key counter for file uploader
 if "upload_key_counter" not in st.session_state:
@@ -249,13 +249,38 @@ if page == "Chat":
     # Chat settings expander
     with st.expander("Chat Settings", expanded=False):
         # LLM provider selection
-        provider = st.selectbox("Select LLM Provider", ["DeepSeek", "OpenAI", "Google"])
+        provider = st.selectbox(
+            "Select LLM Provider",
+            ["DeepSeek", "OpenAI", "Google", "Local"],
+            key="chat_provider_select"
+        )
 
         # Model selection based on provider
-        model_options = MODEL_OPTIONS[provider]
-        model_display_names = [model["display"] for model in model_options]
-        selected_model_display = st.selectbox("Select Model", model_display_names)
-        selected_model = next(model["name"] for model in model_options if model["display"] == selected_model_display)
+        if provider == "Local":
+            LOCAL_MODELS = [
+                {"name": "t5-small", "display": "T5 Small (Seq2Seq)", "type": "seq2seq"},
+                {"name": "bigscience/bloom-1b", "display": "BLOOM 1B (Causal)", "type": "causal"},
+                {"name": "distilgpt2", "display": "DistilGPT2 (Causal)", "type": "causal"},
+            ]
+            local_model_display_names = [m["display"] for m in LOCAL_MODELS]
+            selected_local_model_display = st.selectbox(
+                "Select Local Model",
+                local_model_display_names,
+                key="local_model_select"
+            )
+            selected_local_model = next(m for m in LOCAL_MODELS if m["display"] == selected_local_model_display)
+            model_name = selected_local_model["name"]
+            model_type = selected_local_model["type"]
+        else:
+            model_options = MODEL_OPTIONS[provider]
+            model_display_names = [model["display"] for model in model_options]
+            selected_model_display = st.selectbox(
+                "Select Model",
+                model_display_names,
+                key="provider_model_select"
+            )
+            model_name = next(model["name"] for model in model_options if model["display"] == selected_model_display)
+            model_type = None
 
         # Toggle for using data collection
         st.session_state.use_data_collection = st.toggle(
@@ -272,6 +297,7 @@ if page == "Chat":
                 selected_collection = st.selectbox(
                     "Select Data Collection",
                     collections,
+                    key="chat_data_collection_select",
                     help="A data collection is a collection of data files your RAG vector database is created with."
                 )
             else:
@@ -369,6 +395,8 @@ if page == "Chat":
                 endpoint = "/generate_answer/openai"
             elif provider == "Google":
                 endpoint = "/generate_answer/gemini"
+            elif provider == "Local":
+                endpoint = "/generate_answer/local"
 
             # Prepare messages based on include_chat_history toggle
             if st.session_state.include_chat_history:
@@ -379,7 +407,7 @@ if page == "Chat":
             # Prepare request data
             request_data = {
                 "messages": messages_to_send,  # Send full history or just the current question
-                "model_name": selected_model,
+                "model_name": model_name,
                 "collection_name": selected_collection if st.session_state.use_rag else None,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
@@ -387,6 +415,8 @@ if page == "Chat":
                 "use_rag": st.session_state.use_rag,
                 "system_prompt": st.session_state.system_prompt
             }
+            if provider == "Local":
+                request_data["model_type"] = model_type
 
             # Send request to API
             with st.spinner("Generating answer..."):
