@@ -19,9 +19,13 @@ Dependencies:
 - Python (3.11.5 used)
 - Pip (23.2.1 used)
 
-How to run:
+How to run: - Add API keys to `do_not_commit.env`
+
+Windows:
+- Double click launch_frontend.bat
+
+Other:
 - pip install -r requirements.txt
-- Add API keys to `do_not_commit.env`
 - uvicorn api:app --port=8000
 - streamlit run frontend.py
 
