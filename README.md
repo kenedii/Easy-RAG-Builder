@@ -15,6 +15,10 @@ The LLMs it supports are:
 - Gemini API 2.0-flash, 1.5-flash, 1.5-pro, 2.5-pro-preview-03-25
 - Local Models: t5-small (Seq2Seq), bigscience/bloom-1b1 (Casual), distilgpt2 (Casual)
 
+Dependencies:
+- Python (3.11.5 used)
+- Pip (23.2.1 used)
+
 How to run:
 - pip install -r requirements.txt
 - Add API keys to `do_not_commit.env`
