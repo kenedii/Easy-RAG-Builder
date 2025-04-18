@@ -7,3 +7,5 @@ How to run:
 - streamlit run frontend.py
 
 if api has errors run `set KMP_DUPLICATE_LIB_OK=TRUE` before launching api
+
+![YNFsDzj](https://github.com/user-attachments/assets/626390e1-0d13-4cbe-b93c-43617b263ad1)
