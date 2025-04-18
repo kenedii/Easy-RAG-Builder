@@ -163,6 +163,7 @@ def render_chat_messages(messages):
     for message in messages:
         role = message["role"]
         content = message["content"]
+        sources = message.get("sources", [])  # Get sources if present (for assistant messages)
         if role == "user":
             chat_html += (
                 f'<div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">'
@@ -171,10 +172,17 @@ def render_chat_messages(messages):
                 f'</div></div>'
             )
         else:
+            # Assistant message with sources
+            sources_html = ""
+            if sources:
+                sources_html = "<br><strong>Sources:</strong><ul>"
+                for src in sources:
+                    sources_html += f"<li>{src['file_name']} (Page {src['page_number']})</li>"
+                sources_html += "</ul>"
             chat_html += (
                 f'<div style="display: flex; justify-content: flex-start; margin-bottom: 10px;">'
                 f'<div style="max-width: 80%; text-align: left;">'
-                f'<span style="margin-right: 5px;">🤖</span><strong>Assistant:</strong> {content}'
+                f'<span style="margin-right: 5px;">🤖</span><strong>Assistant:</strong> {content}{sources_html}'
                 f'</div></div>'
             )
     return f'<div style="height: 400px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px;">{chat_html}</div>'
@@ -208,9 +216,13 @@ if page == "Chat":
 if page == "Chat":
     st.header("Chat with RAG System")
 
-    # Initialize session state for RAG toggle
+    # Initialize session state for toggles
     if "use_rag" not in st.session_state:
         st.session_state.use_rag = True
+    if "use_data_collection" not in st.session_state:
+        st.session_state.use_data_collection = True
+    if "include_chat_history" not in st.session_state:
+        st.session_state.include_chat_history = True
 
     # Display current chat name
     if st.session_state.chat_name:
@@ -218,9 +230,58 @@ if page == "Chat":
     else:
         st.subheader("New Chat")
 
-    # Rename Chat
-    with st.expander("Rename Chat"):
-        new_chat_name = st.text_input("Chat Name", value=st.session_state.chat_name)
+    # Chat settings expander
+    with st.expander("Chat Settings", expanded=False):
+        # LLM provider selection
+        provider = st.selectbox("Select LLM Provider", ["DeepSeek", "OpenAI", "Google"])
+
+        # Model selection based on provider
+        model_options = MODEL_OPTIONS[provider]
+        model_display_names = [model["display"] for model in model_options]
+        selected_model_display = st.selectbox("Select Model", model_display_names)
+        selected_model = next(model["name"] for model in model_options if model["display"] == selected_model_display)
+
+        # Toggle for using data collection
+        st.session_state.use_data_collection = st.toggle(
+            "Use Data Collection",
+            value=st.session_state.use_data_collection,
+            help="Enable to use a data collection for RAG; disable to use the LLM without a data collection."
+        )
+
+        # Data collection selection (only shown if use_data_collection is True)
+        selected_collection = None
+        if st.session_state.use_data_collection:
+            collections = list_collections()
+            if collections:
+                selected_collection = st.selectbox(
+                    "Select Data Collection",
+                    collections,
+                    help="A data collection is a collection of data files your RAG vector database is created with."
+                )
+            else:
+                st.warning("No data collections available. Please create one in the Data page.")
+
+        # Auto-disable RAG if no data collection is used
+        if not st.session_state.use_data_collection:
+            st.session_state.use_rag = False
+
+        # Other settings
+        max_tokens = st.slider("Max Tokens (Output)", min_value=50, max_value=15000, value=3000, help="Controls the maximum number of tokens in the generated response.")
+        temperature = st.slider("Temperature", min_value=0.1, max_value=1.0, value=0.7, help="Controls the randomness of the response.")
+        num_passages = st.slider("Number of Context Passages", min_value=1, max_value=10, value=5, help="Controls how many retrieved passages are included as context in the prompt.")
+
+        # Toggle for including chat history
+        st.session_state.include_chat_history = st.toggle(
+            "Include Chat History",
+            value=st.session_state.include_chat_history,
+            help="Enable to include previous messages in the chat as context; disable to send only the current question."
+        )
+
+    # Chat management expander
+    with st.expander("Chat Management", expanded=False):
+        # Rename Chat section
+        st.subheader("Rename Chat")
+        new_chat_name = st.text_input("Chat Name", value=st.session_state.chat_name, key="rename_chat_input")
         if st.button("Rename"):
             if new_chat_name:
                 st.session_state.chat_name = new_chat_name
@@ -233,9 +294,9 @@ if page == "Chat":
                 st.success("Chat name reset.")
                 st.rerun()
 
-    # Delete Chat
-    if selected_chat != "New Chat":
-        with st.expander("Delete Chat"):
+        # Delete Chat section
+        if selected_chat != "New Chat":
+            st.subheader("Delete Chat")
             st.warning("This will permanently delete the chat history.")
             if st.button("Delete Chat"):
                 delete_chat_history(st.session_state.chat_id)
@@ -243,32 +304,10 @@ if page == "Chat":
                 st.session_state.messages = []
                 st.session_state.chat_name = ""
                 st.session_state.use_rag = True
+                st.session_state.use_data_collection = True
+                st.session_state.include_chat_history = True
                 st.success("Chat deleted successfully.")
                 st.rerun()
-
-    # Chat settings in a single collapsible expander
-    with st.expander("Chat Settings", expanded=False):
-        # LLM provider selection
-        provider = st.selectbox("Select LLM Provider", ["DeepSeek", "OpenAI", "Google"])
-
-        # Model selection based on provider
-        model_options = MODEL_OPTIONS[provider]
-        model_display_names = [model["display"] for model in model_options]
-        selected_model_display = st.selectbox("Select Model", model_display_names)
-        selected_model = next(model["name"] for model in model_options if model["display"] == selected_model_display)
-
-        # Data collection selection
-        collections = list_collections()
-        if collections:
-            selected_collection = st.selectbox("Select Data Collection", collections)
-        else:
-            st.warning("No data collections available. Please create one in the Data page.")
-            selected_collection = None
-
-        # Other settings
-        max_tokens = st.slider("Max Tokens (Output)", min_value=50, max_value=15000, value=3000, help="Controls the maximum number of tokens in the generated response.")
-        temperature = st.slider("Temperature", min_value=0.1, max_value=1.0, value=0.7, help="Controls the randomness of the response.")
-        num_passages = st.slider("Number of Context Passages", min_value=1, max_value=10, value=5, help="Controls how many retrieved passages are included as context in the prompt.")
 
     # Chat interface with scrollable area
     chat_placeholder = st.empty()
@@ -277,7 +316,12 @@ if page == "Chat":
     # Chat input with RAG toggle
     col1, col2 = st.columns([1, 5])
     with col1:
-        st.session_state.use_rag = st.toggle("Use RAG", value=st.session_state.use_rag, help="Enable to include context from data collections; disable for standard chatbot mode.")
+        st.session_state.use_rag = st.toggle(
+            "Use RAG",
+            value=st.session_state.use_rag,
+            disabled=not st.session_state.use_data_collection,
+            help="Enable to include context from data collections; disable for standard chatbot mode. Disabled when no data collection is used."
+        )
     with col2:
         prompt = st.chat_input("Ask a question")
 
@@ -296,9 +340,15 @@ if page == "Chat":
             elif provider == "Google":
                 endpoint = "/generate_answer/gemini"
 
+            # Prepare messages based on include_chat_history toggle
+            if st.session_state.include_chat_history:
+                messages_to_send = st.session_state.messages
+            else:
+                messages_to_send = [{"role": "user", "content": prompt}]
+
             # Prepare request data
             request_data = {
-                "question": prompt,
+                "messages": messages_to_send,  # Send full history or just the current question
                 "model_name": selected_model,
                 "collection_name": selected_collection if st.session_state.use_rag else None,
                 "max_tokens": max_tokens,
@@ -312,11 +362,15 @@ if page == "Chat":
                 try:
                     response = requests.post(f"{API_URL}{endpoint}", json=request_data)
                     response.raise_for_status()
-                    answer = response.json()["answer"]
+                    response_data = response.json()
+                    answer = response_data["answer"]
+                    sources = response_data.get("sources", [])  # Get sources if provided
                 except Exception as e:
                     answer = f"Error: {str(e)}"
+                    sources = []
 
-            st.session_state.messages.append({"role": "assistant", "content": answer})
+            # Append assistant message with sources
+            st.session_state.messages.append({"role": "assistant", "content": answer, "sources": sources})
             chat_placeholder.markdown(render_chat_messages(st.session_state.messages), unsafe_allow_html=True)  # Update with assistant's message
 
             # Save chat history
