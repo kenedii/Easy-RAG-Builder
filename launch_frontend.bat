@@ -37,7 +37,7 @@ uv pip install -r requirements.txt || (
 ::    in a new window
 :: -------------------------
 echo [RUN] Launching FastAPI backend...
-start "EasyRAG API" cmd /k "uvicorn api:app --port 8000"
+start "EasyRAG API" cmd /k "set \"KMP_DUPLICATE_LIB_OK=TRUE\" && uvicorn api:app --port 8000"
 
 :: -------------------------
 :: 6) Wait until API is up
