@@ -2,7 +2,7 @@
 
 This is an interface to build RAG models and chat with different LLMs. 
 
-You can build a new RAG by creating a 'Data Collection' and adding your data (only PDF supported).
+You can build a new RAG by creating a 'Data Collection' and adding your data (supports PDF, DOCX, PPTX, TXT, HTML, PNG, JPG, JPEG, HTML).
 
 Then, go to the chat and talk to your Data Collection. 
 
