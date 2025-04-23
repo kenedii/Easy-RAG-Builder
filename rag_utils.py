@@ -1,42 +1,43 @@
-from transformers import DPRQuestionEncoder, DPRContextEncoder, DPRQuestionEncoderTokenizer, DPRContextEncoderTokenizer
+from unstructured.partition.auto import partition
+from pathlib import Path
+from typing import List, Tuple, Dict
 import torch
 import faiss
 import numpy as np
-from PyPDF2 import PdfReader
-import os
-from pathlib import Path
-from typing import List, Tuple, Dict
+from transformers import DPRQuestionEncoder, DPRContextEncoder, DPRQuestionEncoderTokenizer, DPRContextEncoderTokenizer
 import warnings
 
 warnings.filterwarnings("ignore")
 
-def extract_text_from_pdfs(folder_path: str) -> List[Dict]:
+def extract_text_from_documents(folder_path: str) -> List[Dict]:
     """
-    Extract text from all PDF files in the specified folder, including file name and page number.
+    Extract text from all supported document files in the specified folder, including file name and page number if available.
 
     Args:
-        folder_path (str): Path to the folder containing PDF files.
+        folder_path (str): Path to the folder containing document files.
 
     Returns:
         List[Dict]: List of dictionaries with 'text', 'file_name', and 'page_number'.
     """
     texts = []
     folder = Path(folder_path)
-    for pdf_file in folder.glob("*.pdf"):
-        try:
-            with open(pdf_file, 'rb') as file:
-                reader = PdfReader(file)
-                for page_num in range(len(reader.pages)):
-                    page = reader.pages[page_num]
-                    text = page.extract_text() or ""
-                    if text.strip():
+    for file in folder.iterdir():
+        if file.is_file():
+            try:
+                # Use Unstructured.io to partition the file into elements
+                elements = partition(filename=str(file))
+                for element in elements:
+                    text = element.text.strip()
+                    if text:
+                        # Extract page number from metadata if available; otherwise, set to None
+                        page_number = element.metadata.page_number if hasattr(element.metadata, 'page_number') else None
                         texts.append({
-                            "text": text.strip(),
-                            "file_name": pdf_file.name,
-                            "page_number": page_num + 1
+                            "text": text,
+                            "file_name": file.name,
+                            "page_number": page_number
                         })
-        except Exception as e:
-            print(f"[ERROR] Failed to process {pdf_file}: {e}")
+            except Exception as e:
+                print(f"[ERROR] Failed to process {file}: {e}")
     return texts
 
 def split_into_passages(texts: List[Dict], max_length: int = 200) -> List[Dict]:
@@ -45,7 +46,7 @@ def split_into_passages(texts: List[Dict], max_length: int = 200) -> List[Dict]:
 
     Args:
         texts (List[Dict]): List of text dicts with 'text', 'file_name', and 'page_number'.
-        max_length (int): Maximum number of tokens per passage.
+        max_length (int): Maximum number of words per passage.
 
     Returns:
         List[Dict]: List of passage dicts with 'text', 'file_name', and 'page_number'.
@@ -56,13 +57,16 @@ def split_into_passages(texts: List[Dict], max_length: int = 200) -> List[Dict]:
         file_name = item["file_name"]
         page_number = item["page_number"]
         words = text.split()
-        for i in range(0, len(words), max_length):
-            passage_text = " ".join(words[i:i + max_length])
-            passages.append({
-                "text": passage_text,
-                "file_name": file_name,
-                "page_number": page_number
-            })
+        if len(words) <= max_length:
+            passages.append(item)
+        else:
+            for i in range(0, len(words), max_length):
+                passage_text = " ".join(words[i:i + max_length])
+                passages.append({
+                    "text": passage_text,
+                    "file_name": file_name,
+                    "page_number": page_number
+                })
     return passages
 
 def index_passages(passages: List[Dict], context_encoder: DPRContextEncoder, context_tokenizer: DPRContextEncoderTokenizer) -> Tuple[faiss.IndexFlatL2, List[Dict]]:
@@ -140,5 +144,11 @@ def retrieve_passages(
 
     distances, indices = index.search(question_embedding, k)
     top_passages = [passages[i] for i in indices[0]]
-    sources = [{"file_name": p["file_name"], "page_number": p["page_number"]} for p in top_passages]
+    # Include page_number in sources only if it exists
+    sources = []
+    for p in top_passages:
+        source = {"file_name": p["file_name"]}
+        if p["page_number"] is not None:
+            source["page_number"] = p["page_number"]
+        sources.append(source)
     return top_passages, sources
