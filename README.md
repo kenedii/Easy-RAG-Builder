@@ -18,6 +18,7 @@ The LLMs it supports are:
 Dependencies:
 - Python (3.11.5 used)
 - Pip (23.2.1 used)
+- [tesseract](https://github.com/UB-Mannheim/tesseract/wiki) (v5.4.0.20240606 used)
 
 How to run: - Add API keys to `do_not_commit.env`
 

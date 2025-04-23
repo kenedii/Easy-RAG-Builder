@@ -113,7 +113,7 @@ def list_chat_histories():
                 "timestamp": data.get("timestamp", ""),
                 "file_path": file_path
             })
-        except Exception as e:
+        except Exception as  e:
             st.warning(f"Failed to load chat {file_path}: {str(e)}")
     # Sort by timestamp (newest first)
     return sorted(chat_histories, key=lambda x: x["timestamp"], reverse=True)
@@ -184,7 +184,12 @@ def render_chat_messages(messages):
             if sources:
                 sources_html = "<br><strong>Sources:</strong><ul>"
                 for src in sources:
-                    sources_html += f"<li>{src['file_name']} (Page {src['page_number']})</li>"
+                    file_name = src.get("file_name", "Unknown")
+                    page_number = src.get("page_number")
+                    if page_number is not None:
+                        sources_html += f"<li>{file_name} (Page {page_number})</li>"
+                    else:
+                        sources_html += f"<li>{file_name}</li>"
                 sources_html += "</ul>"
             chat_html += (
                 f'<div style="display: flex; justify-content: flex-start; margin-bottom: 10px;">'
@@ -489,7 +494,7 @@ elif page == "Data":
             uploaded_files = st.file_uploader(
                 "Choose files",
                 accept_multiple_files=True,
-                type=["pdf"],
+                type=["pdf", "docx", "pptx", "txt", "html", "png", "jpg", "jpeg"],
                 key=f"file_uploader_{st.session_state.upload_key_counter}"
             )
             if st.button("Upload"):

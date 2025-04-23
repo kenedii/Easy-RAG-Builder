@@ -23,7 +23,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins (for development)
+    allow_origins=["*"],  # Allows all origins 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,9 +36,9 @@ def get_retrieval_system(collection_name: str):
         folder_path = os.path.join('data', collection_name)
         if not os.path.exists(folder_path):
             raise HTTPException(status_code=404, detail="Collection not found")
-        texts = rag_utils.extract_text_from_pdfs(folder_path)
+        texts = rag_utils.extract_text_from_documents(folder_path)  
         if not texts:
-            raise HTTPException(status_code=400, detail="No text could be extracted from the PDFs in the collection")
+            raise HTTPException(status_code=400, detail="No text could be extracted from the documents in the collection")
         passages = rag_utils.split_into_passages(texts)
         index, passages = rag_utils.index_passages(passages, context_encoder, context_tokenizer)
         retrieval_cache[collection_name] = (index, passages)
@@ -51,41 +51,58 @@ class Message(BaseModel):
     sources: List[Dict] = []  # Optional for assistant messages
 
 class GenerateAnswerRequest(BaseModel):
-    messages: List[Message]
+    messages: list[Message]
     model_name: str
-    collection_name: Optional[str] = None
-    max_tokens: int = 100
+    collection_name: str | None = None
+    max_tokens: int = 512
     temperature: float = 0.7
     num_passages: int = 5
-    use_rag: bool = True
-    system_prompt: str = ""
-    model_type: Optional[str] = None  # Added for local models
+    use_rag: bool = False
+    system_prompt: str | None = None
+    model_type: str = "seq2seq"  # or "causal", depending on model
 
 class ClearCacheRequest(BaseModel):
     collection_name: str
 
 @app.post("/generate_answer/local")
 def generate_answer_local(request: GenerateAnswerRequest):
-    if request.model_type is None:
-        raise HTTPException(status_code=400, detail="model_type is required for local models")
-    
+    messages = request.messages
+    question = messages[-1].content if messages else ""
     model_name = request.model_name
-    question = request.messages[-1].content if request.messages else ""
-    # Placeholder for top_passages; adjust based on your RAG logic
-    top_passages = ["Sample context"]  # Replace with actual retrieval logic
-    
+    collection_name = request.collection_name
+    max_tokens = request.max_tokens
+    temperature = request.temperature
+    num_passages = request.num_passages
+    use_rag = request.use_rag
+    system_prompt = request.system_prompt
+    model_type = request.model_type
+
+    top_passages = []
+    sources = []
+    if use_rag:
+        if not collection_name:
+            raise HTTPException(status_code=400, detail="Collection name required when using RAG")
+        index, passages = get_retrieval_system(collection_name)
+        top_passages, sources = rag_utils.retrieve_passages(
+            question, index, passages, question_encoder, question_tokenizer, k=num_passages
+        )
+        # Extract passage texts for local model
+        passage_texts = [p['text'] for p in top_passages]
+    else:
+        passage_texts = []
+
     if model_name not in local_models:
         try:
-            generator_model, generator_tokenizer = local.load_model(model_name, model_type=request.model_type)
+            generator_model, generator_tokenizer = local.load_model(model_name, model_type=model_type)
             local_models[model_name] = (generator_model, generator_tokenizer)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to load local model: {str(e)}")
-    
+
     generator_model, generator_tokenizer = local_models[model_name]
     answer = local.generate_answer(
-        question, top_passages, generator_model, generator_tokenizer, model_type=request.model_type
+        question, passage_texts, generator_model, generator_tokenizer, model_type=model_type
     )
-    return {"answer": answer, "sources": top_passages}  # Adjust sources as needed
+    return {"answer": answer, "sources": sources}
 
 # Endpoint for generating answers using DeepSeek
 @app.post("/generate_answer/deepseek")
