@@ -23,10 +23,11 @@ Dependencies:
 How to run: - Add API keys to `do_not_commit.env`
 
 Windows:
-- Double click launch_frontend.bat
+- Double click launch_frontend.bat (NOTE: PyTorch installation line may need to be changed in launch_frontend.bat if GPU is not CUDA 12.6 Compatible)
 
 Other:
 - pip install -r requirements.txt
+- pip install torch
 - uvicorn api:app --port=8000
 - streamlit run frontend.py
 
