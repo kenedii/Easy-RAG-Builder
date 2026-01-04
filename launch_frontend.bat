@@ -22,6 +22,7 @@ call ".\EasyRAG_venv\Scripts\activate.bat"
 :: -------------------------
 echo [SETUP] Ensuring 'uv' is installed...
 pip install --upgrade uv
+pip install --pre torch torchvision torchaudio
 
 :: -------------------------
 :: 4) Install project deps
@@ -37,7 +38,7 @@ uv pip install -r requirements.txt || (
 ::    in a new window
 :: -------------------------
 echo [RUN] Launching FastAPI backend...
-start "EasyRAG API" cmd /k "set \"KMP_DUPLICATE_LIB_OK=TRUE\" && uvicorn api:app --port 8000"
+start "EasyRAG API" cmd /k "set KMP_DUPLICATE_LIB_OK=TRUE && uvicorn api:app --port 8000"
 
 :: -------------------------
 :: 6) Wait until API is up
